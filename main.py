@@ -7,11 +7,13 @@ import numpy as np
 from tqdm import tqdm
 from argparse import ArgumentParser
 from pytorch_lightning.metrics import Metric
+from pytorch_lightning.callbacks.early_stopping import EarlyStopping
 
-from models import HsuRNN, RNN, FFN
-from datasets import KeyValDataset
 
-# networ
+from models import HsuRNN, RNN, FFN, HsuAOLRNN
+from datasets import KeyValDataset, AOLDataset
+
+# network
 
 class Coverage(Metric):
     def __init__(self, dist_sync_on_step=False):
@@ -32,12 +34,13 @@ class Coverage(Metric):
         idxs_ideal = torch.topk(self.predictions, int(len(self.predictions * 1) / 100)).indices
         return torch.exp(self.true).cpu().numpy()[idxs.cpu().numpy()].sum() / torch.exp(self.true).cpu().numpy().sum()
 
-class CAIDARegressor(pl.LightningModule):
-    def __init__(self, train_path, arch, batch_size, loss_type, weighted=True, alpha=1, forwards=True, simple_bn = False, split_size=64):
+class Regressor(pl.LightningModule):
+    def __init__(self, train_path, arch, batch_size, loss_type, weighted=True, alpha=1, forwards=True, simple_bn = False, split_size=64, project_name="CAIDA"):
         super().__init__()
         self.weighted = weighted
         self.forwards = forwards
         self.save_hyperparameters()
+        self.project_name = project_name
         
         if loss_type == "bn":
             if simple_bn:
@@ -48,21 +51,31 @@ class CAIDARegressor(pl.LightningModule):
             self.model = RNN(forwards=forwards)
         if arch == "HsuRNN":
             self.model = HsuRNN(forwards=forwards)
+        if arch == "HsuAOLRNN":
+            self.model = HsuAOLRNN(forwards=forwards)
         if arch == "FFN":
             self.model = FFN()
         self.Coverage = Coverage()
      
-    def forward(self, x1, x2, x3):
-        y_pred = self.model(x1, x2, x3)
+    def forward(self, x1, x2, x3=None):
+        if self.project_name == "CAIDA":
+            y_pred = self.model(x1, x2, x3)
+        if self.project_name == "AOL":
+            y_pred = self.model(x1, x2)
         return y_pred
 
     def training_step(self, batch, batch_idx):
-        x1, x2, x3, y = batch
-        y_pred = self.forward(x1, x2, x3).reshape(-1, 1)
+        if self.project_name == "CAIDA":
+            x1, x2, x3, y = batch
+            y_pred = self.forward(x1, x2, x3).reshape(-1, 1)
+        if self.project_name == "AOL":
+            x1, x2, y = batch
+            y_pred = self.forward(x1, x2).reshape(-1, 1)
         if self.hparams.loss_type == "bn":
             y_pred_split = torch.split(y_pred, self.hparams.split_size)
             y_score = tuple(self.bn(x) for x in y_pred_split)
-            y_score = torch.cat(y_score).type('torch.DoubleTensor')
+            y_score = torch.cat(y_score).type('torch.DoubleTensor').to(self.device)
+            y = y.type('torch.DoubleTensor').to(self.device)
             if self.weighted:
                 loss = -(y_score.flatten().dot(torch.exp((1 - self.hparams.alpha) * y)))
             else:
@@ -75,7 +88,12 @@ class CAIDARegressor(pl.LightningModule):
         return loss
 
     def train_dataloader(self):
-        train_dataset = KeyValDataset(self.hparams.train_path, alpha=self.hparams.alpha)
+        if self.project_name == "CAIDA":
+            train_dataset = KeyValDataset(self.hparams.train_path, alpha=self.hparams.alpha)
+        elif self.project_name == "AOL":
+            train_dataset = AOLDataset(self.hparams.train_path, alpha=self.hparams.alpha)
+        else:
+            raise NotImplementedError
         train_sampler=None
         if self.hparams.weighted:
             train_sampler = torch.utils.data.WeightedRandomSampler(torch.Tensor(train_dataset.sample_weights).type('torch.DoubleTensor'), 
@@ -83,8 +101,12 @@ class CAIDARegressor(pl.LightningModule):
         return DataLoader(train_dataset, batch_size=self.hparams.batch_size, shuffle = (train_sampler is None), sampler=train_sampler, pin_memory=True, num_workers=16, drop_last=True)
     
     def validation_step(self, batch, batch_idx):
-        x1, x2, x3, y = batch
-        y_pred = self.forward(x1, x2, x3)
+        if self.project_name == "CAIDA":
+            x1, x2, x3, y = batch
+            y_pred = self.forward(x1, x2, x3)
+        if self.project_name == "AOL":
+            x1, x2, y = batch
+            y_pred = self.forward(x1, x2)
         self.Coverage(torch.flatten(y_pred), torch.flatten(y))
 
     def validation_epoch_end(self, outs):
@@ -117,11 +139,14 @@ class CAIDARegressor(pl.LightningModule):
         self.log('ideal@30', ideal(true, pct=30))
         self.log('ideal@50', ideal(true, pct=50))
         self.log('ideal@75', ideal(true, pct=75))
-
     
     def test_step(self, batch, batch_idx):
-        x1, x2, x3, y = batch
-        y_pred = self.forward(x1, x2, x3)
+        if self.project_name == "CAIDA":
+            x1, x2, x3, y = batch
+            y_pred = self.forward(x1, x2, x3)
+        if self.project_name == "AOL":
+            x1, x2, y = batch
+            y_pred = self.forward(x1, x2)
         self.Coverage(torch.flatten(y_pred), y)
     
     def test_epoch_end(self, outs):
@@ -207,57 +232,32 @@ def cli_main():
                         help='Size of Batch to use when generating predictions')
     parser.add_argument('--seed', type=int, default=1337,
                         help='Random Seed')
+    parser.add_argument('--project-name', type=str, default="CAIDA",
+                        help='Project Name')
     parser = pl.Trainer.add_argparse_args(parser)
-    parser = CAIDARegressor.add_model_specific_args(parser)
+    parser = Regressor.add_model_specific_args(parser)
     args = parser.parse_args()
     pl.seed_everything(args.seed)
-    test_dataset = KeyValDataset(args.test_path)
+    if args.project_name == "CAIDA":
+        test_dataset = KeyValDataset(args.test_path)
+    elif args.project_name == "AOL":
+        test_dataset = AOLDataset(args.test_path)
     test_loader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, pin_memory=True, num_workers=30)
     if args.valid_path:
-        val_dataset = KeyValDataset(args.valid_path)
+        if args.project_name == "CAIDA":
+            val_dataset = KeyValDataset(args.valid_path)
+        elif args.project_name == "AOL":
+            val_dataset = AOLDataset(args.valid_path)
         val_loader = DataLoader(val_dataset, batch_size=args.batch_size, num_workers=16, pin_memory=True)
     if args.evaluate and not args.generate_predictions:
-        wandb_logger = WandbLogger(project='CAIDA', name=f"{args.resume}-eval")
-        pretrained_model = CAIDARegressor.load_from_checkpoint(args.resume)
+        wandb_logger = WandbLogger(project=args.project_name, name=f"{args.resume}-eval")
+        pretrained_model = Regressor.load_from_checkpoint(args.resume)
         pretrained_model.freeze()
         trainer = pl.Trainer(gpus=args.gpus, log_every_n_steps=50)
         trainer.test(pretrained_model, test_loader)
     elif args.evaluate and args.generate_predictions:
-        wandb_logger = WandbLogger(project='CAIDA', name=f"{args.resume}-genpred")
-        pretrained_model = CAIDARegressor.load_from_checkpoint(args.resume)
-        pretrained_model.freeze()
-        val_loss_all = np.array([])
-        val_output_all = np.array([])
-        val_loader = DataLoader(val_dataset, batch_size=args.test_batch_size, shuffle=False, pin_memory=True, num_workers=30)
-        for (a, b, c, y) in tqdm(val_loader):
-            val_output = pretrained_model(a, b, c)
-            print(val_output.shape)
-            val_output_all = np.concatenate((val_output_all, val_output.flatten().numpy()))
-            val_loss = (val_output.flatten() - y) ** 2
-            val_loss_all = np.concatenate((val_loss_all, val_loss.flatten().numpy()))
-        assert len(val_loss_all) == len(val_dataset) and len(val_output_all) == len(val_dataset)
-        test_loss_all = np.array([])
-        test_output_all = np.array([])
-        test_loader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, pin_memory=True, num_workers=30)
-        for (a, b, c, y) in tqdm(test_loader):
-            test_output = pretrained_model(a, b, c)
-            test_loss = (test_output.flatten() - y) ** 2
-            print(test_loss.flatten().numpy().shape)
-            test_loss_all = np.concatenate((test_loss_all, test_loss.flatten().numpy()))
-            test_output_all = np.concatenate((test_output_all, test_output.flatten().numpy()))
-            print(len(test_output_all))
-        assert len(test_loss_all) == len(test_dataset) and len(test_output_all) == len(test_dataset)
-        np.savez(args.save_name+'_res',
-            test_output=test_output_all,
-            test_loss=test_loss_all,
-            valid_output=val_output_all,
-        )
-    else:
-        wandb_logger = WandbLogger(project='CAIDA', name=f"{args.checkpoint_path}")
-
-        if args.resume:
-            vanilla_regressor = CAIDARegressor(
-                train_path=args.train_path,
+        wandb_logger = WandbLogger(project=args.project_name, name=f"{args.resume}-genpred")
+        pretrained_model = Regressor.load_from_checkpoint(args.resume, train_path=args.train_path,
                 arch=args.arch,
                 batch_size=args.batch_size,
                 loss_type = args.loss_type,
@@ -265,10 +265,77 @@ def cli_main():
                 alpha=args.alpha,
                 forwards=args.forwards,
                 simple_bn=args.simple_bn,
-                split_size=args.split_size
-            ).load_from_checkpoint(args.resume)
+                split_size=args.split_size,
+                project_name=args.project_name)
+
+        pretrained_model.freeze()
+        trainer = pl.Trainer(gpus=args.gpus, log_every_n_steps=50)
+        trainer.test(pretrained_model, test_loader)
+        print(pretrained_model.device)
+        val_loss_all = np.array([])
+        val_output_all = np.array([])
+        val_loader = DataLoader(val_dataset, batch_size=args.test_batch_size, shuffle=False, pin_memory=True, num_workers=30)
+        if args.project_name == "CAIDA":
+            for (a, b, c, y) in tqdm(val_loader):
+                val_output = pretrained_model(a, b, c)
+                print(val_output.shape)
+                val_output_all = np.concatenate((val_output_all, val_output.flatten().numpy()))
+                val_loss = (val_output.flatten() - y) ** 2
+                val_loss_all = np.concatenate((val_loss_all, val_loss.flatten().numpy()))
+        if args.project_name == "AOL":
+            for (a, b, y) in tqdm(val_loader):
+                a = a.to(pretrained_model.device)
+                b = b.to(pretrained_model.device)
+                val_output = pretrained_model(a, b).cpu()
+                print(val_output.shape)
+                val_output_all = np.concatenate((val_output_all, val_output.flatten().numpy()))
+                val_loss = (val_output.flatten() - y) ** 2
+                val_loss_all = np.concatenate((val_loss_all, val_loss.flatten().numpy()))
+
+        assert len(val_loss_all) == len(val_dataset) and len(val_output_all) == len(val_dataset)
+        test_loss_all = np.array([])
+        test_output_all = np.array([])
+        test_loader = DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, pin_memory=True, num_workers=30)
+        if args.project_name == "CAIDA":
+            for (a, b, c, y) in tqdm(test_loader):
+                test_output = pretrained_model(a, b, c)
+                test_loss = (test_output.flatten() - y) ** 2
+                print(test_loss.flatten().numpy().shape)
+                test_loss_all = np.concatenate((test_loss_all, test_loss.flatten().numpy()))
+                test_output_all = np.concatenate((test_output_all, test_output.flatten().numpy()))
+                print(len(test_output_all))
+        if args.project_name == "AOL":
+            for (a, b, y) in tqdm(test_loader):
+                a = a.to(pretrained_model.device)
+                b = b.to(pretrained_model.device)
+                test_output = pretrained_model(a, b).cpu()
+                test_loss = (test_output.flatten() - y) ** 2
+                print(test_loss.flatten().numpy().shape)
+                test_loss_all = np.concatenate((test_loss_all, test_loss.flatten().numpy()))
+                test_output_all = np.concatenate((test_output_all, test_output.flatten().numpy()))
+                print(len(test_output_all))
+        assert len(test_loss_all) == len(test_dataset) and len(test_output_all) == len(test_dataset)
+        np.savez(args.save_name+'_res',
+            test_output=test_output_all,
+            test_loss=test_loss_all,
+            valid_output=val_output_all,
+        )
+    else:
+        wandb_logger = WandbLogger(project=args.project_name, name=f"{args.checkpoint_path}")
+
+        if args.resume:
+            vanilla_regressor = Regressor.load_from_checkpoint(args.resume, train_path=args.train_path,
+                arch=args.arch,
+                batch_size=args.batch_size,
+                loss_type = args.loss_type,
+                weighted=args.weighted,
+                alpha=args.alpha,
+                forwards=args.forwards,
+                simple_bn=args.simple_bn,
+                split_size=args.split_size,
+                project_name=args.project_name)
         else:
-            vanilla_regressor = CAIDARegressor(
+            vanilla_regressor = Regressor(
                 train_path=args.train_path, 
                 arch=args.arch,
                 batch_size=args.batch_size,
@@ -277,10 +344,17 @@ def cli_main():
                 alpha=args.alpha,
                 forwards=args.forwards, 
                 simple_bn=args.simple_bn,
-                split_size=args.split_size
+                split_size=args.split_size,
+                project_name=args.project_name,
             )
-
-        trainer = pl.Trainer(default_root_dir=args.checkpoint_path, fast_dev_run=args.smoke, gpus=args.gpus, max_epochs=args.n_epochs, log_every_n_steps=50, logger=wandb_logger)
+        early_stop_callback = EarlyStopping(
+           monitor='coverage@01',
+           min_delta=0.00,
+           patience=50,
+           verbose=False,
+           mode='min'
+        )
+        trainer = pl.Trainer(default_root_dir=args.checkpoint_path, fast_dev_run=args.smoke, gpus=args.gpus, max_epochs=args.n_epochs, log_every_n_steps=50, logger=wandb_logger, callbacks=[early_stop_callback])
         
         trainer.fit(vanilla_regressor, val_dataloaders=val_loader)
         trainer.test(test_dataloaders=test_loader)

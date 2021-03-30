@@ -120,3 +120,23 @@ class FFN(nn.Module):
         all_features = torch.cat((src, dst, src_port, dst_port, protocol), dim = 1)
         y_pred = self.final(all_features)
         return y_pred
+
+class HsuAOLRNN(nn.Module):
+    def __init__(self, forwards):
+        super(HsuAOLRNN, self).__init__()
+        self.embeddings = nn.Embedding(44, 64)
+        self.lstm = nn.LSTM(64, 256)
+        self.fc1 = nn.Linear(256, 32)
+        self.fc2 = nn.Linear(32, 1)
+        self.act = nn.LeakyReLU(negative_slope=0.3) #tf default
+                                   
+    def forward(self, x1, x2):
+        x1 = x1.T
+        x1 = self.embeddings(x1)
+        #hidden = (torch.randn(1, 1, 256), torch.randn(1, 1, 256))  # clean out hidden state
+        lstm_out, _ = self.lstm(x1)
+        lstm_out = lstm_out[-1]
+        combined_lstm = lstm_out
+        activated = self.act(self.fc1(combined_lstm))
+        y_pred = torch.flatten(self.fc2(activated))
+        return y_pred
