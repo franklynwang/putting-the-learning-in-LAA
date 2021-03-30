@@ -1,6 +1,6 @@
 # Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation
 
-This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using Pytorch Lightning
+This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
 
 Table of Contents
 =================
