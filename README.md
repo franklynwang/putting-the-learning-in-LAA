@@ -2,28 +2,21 @@
 
 This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using Pytorch Lightning
 
-## Table of Contents
+Table of Contents
+=================
 
-1. Sketches
-
-   a. Installation
-
-   b. Obtaining Synthetic Results
-
-2. Data
-3. Model Components
-
-   a. Model Training
-
-   b. Model Evaluation
-
-   c. Generating Predictions
-
-   d. Showing Coverage Plots
-
-   e. Generating Error Ratios
-
-   f. Plotting Error Ratios
+   * [Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation](#putting-the-learning-into-learning-augmented-algorithms-for-frequency-estimation)
+      * [Table of Contents](#table-of-contents)
+      * [Sketches](#sketches)
+         * [Obtaining Synthetic Results](#obtaining-synthetic-results)
+      * [Data](#data)
+      * [Model Components](#model-components)
+         * [Model Training](#model-training)
+         * [Model Evaluation](#model-evaluation)
+         * [Generating Predictions](#generating-predictions)
+         * [Showing coverage plots](#showing-coverage-plots)
+         * [Generating Eror Ratios](#generating-eror-ratios)
+         * [Plotting Error Ratios](#plotting-error-ratios)
 
 ## Sketches
 
@@ -88,8 +81,10 @@ To train the model, run the following command, e.g.
 
 ```
 python main.py --n-epochs 100 --batch-size 1024 --forwards --split-size 8 \
-                        --loss-type "bn" --simple-bn \
-                        --arch "HsuRNN" --checkpoint-path "bn-HsuRNN-8-ckpts-forwards/trial4" --seed 4 \
+                        --loss-type "bn" --simple-bn \ #loss type
+                        --arch "HsuRNN" \ #architecture of models
+                        --checkpoint-path "bn-HsuRNN-8-ckpts-forwards/trial4" \ # path to checkpoint
+                        --seed 4 \
                         --train-path ./data/caida/equinix-chicago.dirA.20160121-130000.ports.npy \
                              ./data/caida/equinix-chicago.dirA.20160121-130100.ports.npy \
                              ./data/caida/equinix-chicago.dirA.20160121-130200.ports.npy \
@@ -118,7 +113,9 @@ python main.py  --evaluate \
                                  ./data/caida/equinix-chicago.dirA.20160121-130600.ports.npy \
                          --valid-path ./data/caida/equinix-chicago.dirA.20160121-130700.ports.npy \
                          --test-path  ./data/caida/equinix-chicago.dirA.20160121-130800.ports.npy \
-                        --save-name "l1-HsuRNN-False-ckpts-forwards-more/trial4/predictions08" --gpus 1 --auto_select_gpus True
+                        --save-name "l1-HsuRNN-False-ckpts-forwards-more/trial4/predictions08" \ #place to save predictions to, this will create a file predictions08.npz
+                        --gpus 1 \
+                        --auto_select_gpus True \
 ```
 
 ### Generating Predictions
@@ -140,11 +137,12 @@ python main.py  --evaluate \
                 --generate-predictions \
                 --save-name "all_logs/log_mse-HsuRNN-True-ckpts-forwards-more/trial1/predictions08" &
 ```
-which will place the predictions into  `all_logs/log_mse-HsuRNN-True-ckpts-forwards-more/trial1/predictions08.npz`.
+
+which will place the predictions into `all_logs/log_mse-HsuRNN-True-ckpts-forwards-more/trial1/predictions08.npz`.
 
 ### Showing coverage plots
 
-To show the screening rates, use `show_screened_rates.ipynb`. Unfortunately, due to constraints on the size of the supplementary material, we are unable to provide thefiles containing the predictions. 
+To show the screening rates, use `show_screened_rates.ipynb`. Unfortunately, due to constraints on the size of the supplementary material, we are unable to provide the files containing the predictions.
 
 ### Generating Eror Ratios
 
