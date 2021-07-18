@@ -81,8 +81,8 @@ def process_error(path, path2, exp_path, formula, path3=None,):
         rmses = []
         seeds = []
 
-        tiny_1 = list(itertools.product(np.geomspace(0.2, 20, 80), [1], [100, 300, 1000, 3000, 10000], np.arange(100), ["cm"]))
-        tiny_2 = list(itertools.product(np.geomspace(0.2, 20, 80), [2, 3, 4], [100, 300, 1000, 3000, 10000], np.arange(20), ["cm"]))
+        tiny_1 = list(itertools.product(np.geomspace(0.2, 20, 80), [1], [100, 300, 1000, 3000, 10000], np.arange(100), ["cm", "cs"]))
+        tiny_2 = list(itertools.product(np.geomspace(0.2, 20, 80), [2, 3, 4], [100, 300, 1000, 3000, 10000], np.arange(20), ["cm", "cs"]))
 
         qtiny = tiny_1 + tiny_2
         #qsmall = list(itertools.product([0.1, 0.3, 0.5, 1, 2, 4, 5, 7, 10, 15, 20, 40, 60, 75], range(1, 5), np.linspace(100, 30000, 50).astype(int), np.arange(5), ["cm"]))
@@ -116,7 +116,7 @@ def process_error(path, path2, exp_path, formula, path3=None,):
             sums.append(result[3])
         df = pd.DataFrame({"space": spaces, "f_error": f_errors, "sum": sums, 
                            "width": widths, "nhashes": nhashes_arr, "rmse": rmses, "seed": seeds, 
-                           "perc": percs})
+                           "perc": percs, "sketch": sketch_types})
         print(df)
         df.to_feather(exp_path)
 def main():

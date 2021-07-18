@@ -59,7 +59,12 @@ def get_ideal_error(true_out, valid_out, test_out, mem_perc, nhashes, width, see
     space = 4 * width * nhashes + 8 * nbuckets
     return (space, get_f_error(true_out, preds), get_mse(true_out, preds), np.sum(freqs))
 
-def process_error(path, path2, exp_path, formula, path3=None,):
+def process_error(path, path2, exp_path, formula, path3=None,
+                  perc_range=np.geomspace(0.2,20,40),
+                  nhashes_range=[1,2,3,4],
+                  counter_range=[1000,3000,10000,30000,100000],
+                  ntrials=100, 
+                  sketch_choices=["cm","cs"]):
     with torch.no_grad():
         f = np.load(path)
         true = np.load(path2, allow_pickle=True).item()
@@ -82,29 +87,15 @@ def process_error(path, path2, exp_path, formula, path3=None,):
         rmses = []
         seeds = []
 
-        tiny_1 = list(itertools.product(np.geomspace(0.2, 20, 80), [1], [1000, 3000, 10000, 30000, 100000], np.arange(100), ["cm"]))
-        tiny_2 = list(itertools.product(np.geomspace(0.2, 20, 80), [2, 3, 4], [1000, 3000, 10000, 30000, 100000], np.arange(20), ["cm"]))
-
-        qtiny = tiny_1 + tiny_2
-        qsmall = list(itertools.product([0.1, 0.3, 0.5, 1, 2, 4, 5, 7, 10, 15, 20, 40, 60, 75], range(1, 5), np.linspace(1000, 300000, 50).astype(int), np.arange(5), ["cm"]))
-        qbig = list(itertools.product([0.1, 0.2, 0.5, 1, 2, 4, 5, 7, 10, 15, 20, 25, 30, 40], range(1, 5), np.geomspace(1000, 300000, 40).astype(int), np.arange(10), ["cm"]))
-        qtest = list(itertools.product([7], [1, 3], np.geomspace(1000, 300000, 4).astype(int), np.arange(50), ["cm"]))
-        #qgiant = list(itertools.product([0.1, 0.2, 0.5, 1, 2, 4, 5, 5.5, 6, 7, 8, 10, 12, 15, 17, 20, 22, 25, 30, 40], range(1, 5), np.geomspace(1000, 300000, 50).astype(int), np.arange(20), ["cm"]))
-        q = qtiny
+        grid = list(itertools.product(perc_range, nhashes_range, counter_range, np.arange(ntrials), sketch_choices))
         with Pool(12) as p:
-            if path3 is None:
-                if formula == "std":
-                    pfunc = partial(get_error, true_out, valid_out, test_out)
-                if formula == "ideal":
-                    pfunc = partial(get_ideal_error, true_out, valid_out, test_out)    
-            if path3 is not None:
-                if formula == "std":
-                    pfunc = partial(get_error_2, true_out, valid_out, test_out, valid_out_2, test_out_2)
-                if formula == "ideal":
-                    pfunc = partial(get_ideal_error_2, true_out, valid_out, test_out, valid_out_2, test_out_2)                
-            res = p.starmap(pfunc, tqdm(q))
-        for i in range(len(q)):
-            ele = q[i]
+            if formula == "std":
+                pfunc = partial(get_error, true_out, valid_out, test_out)
+            if formula == "ideal":
+                pfunc = partial(get_ideal_error, true_out, valid_out, test_out)                  
+            res = p.starmap(pfunc, tqdm(grid))
+        for i in range(len(grid)):
+            ele = grid[i]
             result = res[i]
             percs.append(ele[0])
             nhashes_arr.append(ele[1])
@@ -117,31 +108,23 @@ def process_error(path, path2, exp_path, formula, path3=None,):
             sums.append(result[3])
         df = pd.DataFrame({"space": spaces, "f_error": f_errors, "sum": sums, 
                            "width": widths, "nhashes": nhashes_arr, "rmse": rmses, "seed": seeds, 
-                           "perc": percs})
-        print(df)
+                           "perc": percs, "sketch": sketch_types})
         df.to_feather(exp_path)
+
+import argparse
 def main():
-    for formula in ["std"]:
-        for minute in [29]:
-            #for method in ["bn-8-HsuRNN-True-ckpts-forwards-more", "log_mse-HsuRNN-False-ckpts-forwards-more"]:
-            for method in ["l1-HsuRNN-True-ckpts-forwards-more", "log_mse-HsuRNN-False-ckpts-forwards-more", "log_mse-HsuRNN-True-ckpts-forwards-more"]:
-                path = f"all_logs/{method}/trial1/lightning_logs/predictions{minute:02}_res.npz"
-                path2 = f"equinix-chicago.dirA.20160121-13{minute:02}00.ports.npy" 
-                exp_path = f"all_logs/{method}/trial1/lightning_logs/minute{minute:02}_{formula}_giant_results.ftr"
-                process_error(path, path2, exp_path, formula)
-        for minute in [59]:
-            for method in ["bn-8-HsuRNN-True-ckpts-forwards-more", "bn-64-HsuRNN-True-ckpts-forwards-more", "l1-HsuRNN-False-ckpts-forwards-more",
-                          "l1-HsuRNN-True-ckpts-forwards-more", "log_mse-HsuRNN-False-ckpts-forwards-more", "log_mse-HsuRNN-True-ckpts-forwards-more"]:
-                path = f"all_logs/{method}/trial1/lightning_logs/predictions{minute:02}_res.npz"
-                path2 = f"equinix-chicago.dirA.20160121-13{minute:02}00.ports.npy" 
-                exp_path = f"all_logs/{method}/trial1/lightning_logs/minute{minute:02}_{formula}_giant_results.ftr"
-                process_error(path, path2, exp_path, formula)
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--perc-range", type=str, default='np.geomspace(0.2,20,40)')
+    parser.add_argument("--nhashes-range", nargs='+', required=True)
+    parser.add_argument("--counter-range", nargs='+', required=True)
+    parser.add_argument("--ntrials", type=int)
+    parser.add_argument("--sketch-type", nargs='+')
+    parser.add_argument("--pred-path", type=str, required=True, help="Path to predictions from model") 
+    parser.add_argument("--npy-data", type=str, required=True, help="Path to ground truth .npy files")
+    parser.add_argument("--result-path", type=str, required=True, help="Where to save the results")
+    parser.add_argument("--formula", type=str, required=True, help="std (for the 10\% overprediction correction), ideal (for just highest scores)")
 
-            for method in []:
-                path = f"pred_exp20_ip_rnn_10min_r1-p2-h2_rmin65_ru64_bs512_ep350_13{minute:02}_res.npz"
-                path2 = f"equinix-chicago.dirA.20160121-13{minute:02}00.ports.npy" 
-                exp_path = f"all_logs/theirs/minute{minute:02d}_{formula}_tiny_results.ftr"
-                process_error(path, path2, exp_path, formula)
-
+    args = parser.parse_args()
+    process_error(args.pred_path, args.npy_data, args.result_path, args.formula, args.perc_range, args.nhashes_range, args.counter_range, args.ntrials, args.sketch_type)
 if __name__ == "__main__":
     main()

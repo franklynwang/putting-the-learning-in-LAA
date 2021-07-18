@@ -1,0 +1,11 @@
+*.png
+*.svg
+*.pyc
+*.pdf
+*.npy
+*.ftr
+*.npz
+*.yaml
+*.out.tfevents*
+wandb/**
+**checkpoint**

@@ -1,24 +1,26 @@
-# Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation
+# Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation (ICML 2021)
 
-This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning)
+This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning).
 
-Table of Contents
-=================
+## Table of Contents
 
-   * [Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation](#putting-the-learning-into-learning-augmented-algorithms-for-frequency-estimation)
-      * [Table of Contents](#table-of-contents)
-      * [Sketches](#sketches)
-         * [Obtaining Synthetic Results](#obtaining-synthetic-results)
-      * [Data](#data)
-      * [Model Components](#model-components)
-         * [Model Training](#model-training)
-         * [Model Evaluation](#model-evaluation)
-         * [Generating Predictions](#generating-predictions)
-         * [Showing coverage plots](#showing-coverage-plots)
-         * [Generating Eror Ratios](#generating-eror-ratios)
-         * [Plotting Error Ratios](#plotting-error-ratios)
+- [Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation (ICML 2021)](#putting-the-learning-into-learning-augmented-algorithms-for-frequency-estimation-icml-2021)
+  - [Table of Contents](#table-of-contents)
+  - [Sketches](#sketches)
+    - [Obtaining Synthetic Results](#obtaining-synthetic-results)
+  - [Data](#data)
+  - [Model Components](#model-components)
+    - [Model Training](#model-training)
+    - [Model Evaluation](#model-evaluation)
+    - [Generating Predictions](#generating-predictions)
+    - [Showing coverage plots](#showing-coverage-plots)
+    - [Generating Error Ratios](#generating-error-ratios)
+    - [Plotting Error Ratios](#plotting-error-ratios)
+  - [Citation](#citation)
 
 ## Sketches
+
+While implementing the paper, we had to create a new library for Count-Min Sketches and Count-Sketches, as current solutions were inadequate. C++ libraries are difficult to use, and Python packages tend to be slow. Thus, we wrote a Python package that contains Python bindings to a C++ library to calculate the predictions of the count-min sketch and count-sketches. This code is located in `sketches.cpp`.
 
 We include a Python Package that contains Python bindings to a C++ library to calculate the results of the count-min sketch and count-sketches.
 
@@ -38,7 +40,11 @@ Then, run
 
 takes as input a random seed, the number of hashes, the width of the sketch (or the number of cells in each row), and the frequencies of each key. Then, it outputs what a count-min sketch would give as predicted frequencies with that particular set of parameters.
 
-The function `count_sketch_preds` does the analagous function for count-sketches.
+```
+[numpy array of long longs] count_sketch_preds(int nhashes, [numpy array of long longs] np_input, ll width, int seed)
+```
+
+performs the same function for the Count-Sketch. To check if your install works, please run
 
 ### Obtaining Synthetic Results
 
@@ -46,7 +52,7 @@ To obtain synthetic results, one can simply use `get_synthetic_errors.ipynb`.
 
 ## Data
 
-For getting the data, which is not publically available, we defer to the instructions in Hsu et al's repository.
+For getting the data, which is not publicly available, we defer to the instructions in Hsu et al's repository.
 
 Dataset website: http://www.caida.org/data/passive/passive_dataset.xml
 
@@ -142,9 +148,9 @@ which will place the predictions into `all_logs/log_mse-HsuRNN-True-ckpts-forwar
 
 ### Showing coverage plots
 
-To show the screening rates, use `show_screened_rates.ipynb`. Unfortunately, due to constraints on the size of the supplementary material, we are unable to provide the files containing the predictions.
+To show the screening rates, use `show_screened_rates.ipynb`.
 
-### Generating Eror Ratios
+### Generating Error Ratios
 
 To generate the sketch size vs error ratio plots, we use a hyperparameter search in get_results to create a feather file containing our data.
 
@@ -155,3 +161,18 @@ This will save results under `all_logs`. Our results are already located there.
 ### Plotting Error Ratios
 
 To plot the results, and to generate the figures, use `plot_ratios.ipynb`
+
+## Citation
+
+If you use our code or cite our paper, please cite
+
+```
+@inproceedings{du2021putting,
+  title={Putting the “Learning},
+  author={Du, Elbert and Wang, Franklyn and Mitzenmacher, Michael},
+  booktitle={International Conference on Machine Learning},
+  pages={2860--2869},
+  year={2021},
+  organization={PMLR}
+}
+```
