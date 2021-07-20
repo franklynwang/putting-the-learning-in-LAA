@@ -1,6 +1,6 @@
 # Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation (ICML 2021)
 
-This repository consists of the code for the paper "Putting the ``Learning" into Learning-Augmented Algorithms for Frequency Estimation". The code is written using [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning).
+This repository consists of the code for the paper [Putting the "Learning" into Learning-Augmented Algorithms for Frequency Estimation](http://proceedings.mlr.press/v139/du21d.html). The code is written using [Pytorch Lightning](https://github.com/PyTorchLightning/pytorch-lightning).
 
 ## Table of Contents
 
@@ -11,40 +11,20 @@ This repository consists of the code for the paper "Putting the ``Learning" into
   - [Data](#data)
   - [Model Components](#model-components)
     - [Model Training](#model-training)
-    - [Model Evaluation](#model-evaluation)
     - [Generating Predictions](#generating-predictions)
     - [Showing coverage plots](#showing-coverage-plots)
     - [Generating Error Ratios](#generating-error-ratios)
     - [Plotting Error Ratios](#plotting-error-ratios)
+    - [Plotting Screened Rates](#plotting-screened-rates)
   - [Citation](#citation)
 
 ## Sketches
 
-While implementing the paper, we had to create a new library for Count-Min Sketches and Count-Sketches, as current solutions were inadequate. C++ libraries are difficult to use, and Python packages tend to be slow. Thus, we wrote a Python package that contains Python bindings to a C++ library to calculate the predictions of the count-min sketch and count-sketches. This code is located in `sketches.cpp`.
-
-We include a Python Package that contains Python bindings to a C++ library to calculate the results of the count-min sketch and count-sketches.
-
-NOTE: this only works on Mac in our current version.
-
-First, you will need pybind11, so run
-
-`pip install pybind11`
-
-Then, run
-
-`sh build.sh` to install the sketches library. This library implements two functions:
+To run the code for this project, you will need the quick_sketches library, which you can find [here](https://github.com/franklynwang/quick-sketches), or simply run:
 
 ```
-[numpy array of long longs] cm_sketch_preds(int nhashes, [numpy array of long longs] np_input, ll width, int seed)
+pip install quick_sketches
 ```
-
-takes as input a random seed, the number of hashes, the width of the sketch (or the number of cells in each row), and the frequencies of each key. Then, it outputs what a count-min sketch would give as predicted frequencies with that particular set of parameters.
-
-```
-[numpy array of long longs] count_sketch_preds(int nhashes, [numpy array of long longs] np_input, ll width, int seed)
-```
-
-performs the same function for the Count-Sketch. To check if your install works, please run
 
 ### Obtaining Synthetic Results
 
@@ -52,7 +32,7 @@ To obtain synthetic results, one can simply use `get_synthetic_errors.ipynb`.
 
 ## Data
 
-For getting the data, which is not publicly available, we defer to the instructions in Hsu et al's repository.
+For getting the data, which is not publicly available, we defer to the instructions in Hsu et al's repository, reproduced below.
 
 Dataset website: http://www.caida.org/data/passive/passive_dataset.xml
 
@@ -103,26 +83,7 @@ python main.py --n-epochs 100 --batch-size 1024 --forwards --split-size 8 \
                         --gpus 1 --auto_select_gpus True &
 ```
 
-### Model Evaluation
-
-To evaluate the model, run the following command, e.g.
-
-```
-python main.py  --evaluate \
-                        --resume {PATH-TO-CHECKPOINT} \
-                         --train-path ./data/caida/equinix-chicago.dirA.20160121-130000.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130100.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130200.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130300.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130400.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130500.ports.npy \
-                                 ./data/caida/equinix-chicago.dirA.20160121-130600.ports.npy \
-                         --valid-path ./data/caida/equinix-chicago.dirA.20160121-130700.ports.npy \
-                         --test-path  ./data/caida/equinix-chicago.dirA.20160121-130800.ports.npy \
-                        --save-name "l1-HsuRNN-False-ckpts-forwards-more/trial4/predictions08" \ #place to save predictions to, this will create a file predictions08.npz
-                        --gpus 1 \
-                        --auto_select_gpus True \
-```
+This will save your model under, say, "bn-HsuRNN-8-ckpts-forwards/trial4".
 
 ### Generating Predictions
 
@@ -154,13 +115,27 @@ To show the screening rates, use `show_screened_rates.ipynb`.
 
 To generate the sketch size vs error ratio plots, we use a hyperparameter search in get_results to create a feather file containing our data.
 
-`python get_results.py`
+```
+python get_results.py --perc-range="np.geomspace(0.2,20,40)" \
+                      --nhashes-range 1 2 3 4 \
+                      --counter-range 1000 3000 10000 30000 100000 \
+                      --ntrials 2 \
+                      --sketch-type cm cs \
+                      --pred-path tb_logs_modded/log_mse-HsuRNN-True-ckpts-forwards-more/trial1/lightning_logs/predictions08_res.npz \
+                      --npy-data equinix-chicago.dirA.20160121-130800.ports.npy \
+                      --result-path all_logs/test_results.ftr \
+                      --formula std
+```
 
-This will save results under `all_logs`. Our results are already located there.
+This will save results under result_path.
 
 ### Plotting Error Ratios
 
 To plot the results, and to generate the figures, use `plot_ratios.ipynb`
+
+### Plotting Screened Rates
+
+To plot the results, and to generate the figures, use `show_screened_rates.ipynb`
 
 ## Citation
 

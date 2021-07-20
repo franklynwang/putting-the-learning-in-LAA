@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-import quick_sketches
+import sketches
 import matplotlib.pyplot as plt
 import torch
 from tqdm import tqdm
@@ -33,9 +33,9 @@ def get_error(true_out, valid_out, test_out, mem_perc, nhashes, width, seed, ske
     if nsamples > 0:
         freqs[samps] = 0
     if sketch_type == "cs":
-        preds = quick_sketches.count_sketch_preds(nhashes, freqs, width, seed)
+        preds = sketches.count_sketch_preds(nhashes, freqs, width, seed)
     elif sketch_type == "cm":
-        preds = quick_sketches.cm_sketch_preds(nhashes, freqs, width, seed)
+        preds = sketches.cm_sketch_preds(nhashes, freqs, width, seed)
     if nsamples > 0:
         preds[samps] = memmed_values[samps]
     space = 4 * width * nhashes + 8 * nbuckets
@@ -52,19 +52,14 @@ def get_ideal_error(true_out, valid_out, test_out, mem_perc, nhashes, width, see
     memmed_values = true_out.copy()
     freqs[samps] = 0
     if sketch_type == "cs":
-        preds = quick_sketches.count_sketch_preds(nhashes, freqs, width, seed)
+        preds = sketches.count_sketch_preds(nhashes, freqs, width, seed)
     elif sketch_type == "cm":
-        preds = quick_sketches.cm_sketch_preds(nhashes, freqs, width, seed)
+        preds = sketches.cm_sketch_preds(nhashes, freqs, width, seed)
     preds[samps] = memmed_values[samps]
     space = 4 * width * nhashes + 8 * nbuckets
     return (space, get_f_error(true_out, preds), get_mse(true_out, preds), np.sum(freqs))
 
-def process_error(path, path2, exp_path, formula,
-                  perc_range=np.geomspace(0.2,20,40),
-                  nhashes_range=[1,2,3,4],
-                  counter_range=[1000,3000,10000,30000,100000],
-                  ntrials=100, 
-                  sketch_choices=["cm","cs"]):
+def process_error(path, path2, exp_path, formula, path3=None,):
     with torch.no_grad():
         f = np.load(path)
         true = np.load(path2, allow_pickle=True).item()
@@ -72,6 +67,11 @@ def process_error(path, path2, exp_path, formula,
         valid_out = f["valid_output"].flatten()
         test_out = f["test_output"].flatten()
         test_out += 0.00001 * np.random.randn(*test_out.shape)
+        if path3 is not None:
+            f = np.load(path3)
+            valid_out_2 = f["valid_output"].flatten()
+            test_out_2 = f["test_output"].flatten()
+            test_out_2 += 0.00001 * np.random.randn(*test_out_2.shape)
         spaces = []
         f_errors = []
         sums = []
@@ -82,15 +82,25 @@ def process_error(path, path2, exp_path, formula,
         rmses = []
         seeds = []
 
-        grid = list(itertools.product(perc_range, nhashes_range, counter_range, np.arange(ntrials), sketch_choices))
-        with Pool(multiprocessing.cpu_count()) as p:
-            if formula == "std":
-                pfunc = partial(get_error, true_out, valid_out, test_out)
-            if formula == "ideal":
-                pfunc = partial(get_ideal_error, true_out, valid_out, test_out)                  
-            res = p.starmap(pfunc, tqdm(grid))
-        for i in range(len(grid)):
-            ele = grid[i]
+        tiny_1 = list(itertools.product(np.linspace(2.5, 20, 8), [1], [1000,  10000,  100000], np.arange(100), ["cm", "cs"]))
+        tiny_2 = list(itertools.product(np.linspace(2.5, 20, 8), [2, 3, 4], [1000, 10000, 100000], np.arange(20), ["cm", "cs"]))
+
+        qtiny = tiny_1 + tiny_2
+        q = qtiny
+        with Pool(12) as p:
+            if path3 is None:
+                if formula == "std":
+                    pfunc = partial(get_error, true_out, valid_out, test_out)
+                if formula == "ideal":
+                    pfunc = partial(get_ideal_error, true_out, valid_out, test_out)    
+            if path3 is not None:
+                if formula == "std":
+                    pfunc = partial(get_error_2, true_out, valid_out, test_out, valid_out_2, test_out_2)
+                if formula == "ideal":
+                    pfunc = partial(get_ideal_error_2, true_out, valid_out, test_out, valid_out_2, test_out_2)                
+            res = p.starmap(pfunc, tqdm(q))
+        for i in range(len(q)):
+            ele = q[i]
             result = res[i]
             percs.append(ele[0])
             nhashes_arr.append(ele[1])
@@ -105,25 +115,14 @@ def process_error(path, path2, exp_path, formula,
                            "width": widths, "nhashes": nhashes_arr, "rmse": rmses, "seed": seeds, 
                            "perc": percs, "sketch": sketch_types})
         df.to_feather(exp_path)
-
-import argparse
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--perc-range", type=str, default='np.geomspace(0.2,20,40)')
-    parser.add_argument("--nhashes-range", nargs='+', required=True)
-    parser.add_argument("--counter-range", nargs='+', required=True)
-    parser.add_argument("--ntrials", type=int)
-    parser.add_argument("--sketch-type", nargs='+')
-    parser.add_argument("--pred-path", type=str, required=True, help="Path to predictions from model") 
-    parser.add_argument("--npy-data", type=str, required=True, help="Path to ground truth .npy files")
-    parser.add_argument("--result-path", type=str, required=True, help="Where to save the results")
-    parser.add_argument("--formula", type=str, required=True, help="std (for the 10\% overprediction correction), ideal (for just highest scores)")
+    for formula in ["std"]:
+        for minute in [59]:
+            for method in ["log_mse-HsuRNN-False-ckpts-forwards-more"]:
+                path = f"tb_logs_modded/{method}/trial1/lightning_logs/predictions{minute:02}_res.npz"
+                path2 = f"equinix-chicago.dirA.20160121-13{minute:02}00.ports.npy" 
+                exp_path = f"tb_logs_modded/{method}/trial1/lightning_logs/minute{minute:02}_{formula}_small_final_results.ftr"
+                process_error(path, path2, exp_path, formula)
 
-    args = parser.parse_args()
-    args.perc_range = eval(args.perc_range)
-    args.counter_range = list(map(int, args.counter_range))
-    args.nhashes_range = list(map(int, args.nhashes_range))
-
-    process_error(args.pred_path, args.npy_data, args.result_path, args.formula, args.perc_range, args.nhashes_range, args.counter_range, args.ntrials, args.sketch_type)
 if __name__ == "__main__":
     main()
